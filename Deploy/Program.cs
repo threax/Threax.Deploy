@@ -140,7 +140,7 @@ namespace Deploy
                 }
 
                 //Run deployment
-                var startInfo = new ProcessStartInfo("docker", $"stack deploy -c {composeFile} {stack}")
+                var startInfo = new ProcessStartInfo("docker", $"stack deploy --prune --with-registry-auth -c {composeFile} {stack}")
                 {
                     RedirectStandardError = true,
                     RedirectStandardOutput = true
