@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Dynamic;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -15,6 +16,7 @@ namespace Deploy
         static void Main(string[] args)
         {
             var secretFiles = new List<string>();
+            var composeFile = "docker-compose.yml";
             try
             {
                 var inputFile = args[0];
@@ -131,14 +133,14 @@ namespace Deploy
 
                 var serializer = new YamlDotNet.Serialization.Serializer();
                 var yaml = serializer.Serialize(parsed);
-                using (var outStream = new StreamWriter(File.Open("docker-compose.yml", FileMode.Create, FileAccess.Write, FileShare.None)))
+                using (var outStream = new StreamWriter(File.Open(composeFile, FileMode.Create, FileAccess.Write, FileShare.None)))
                 {
                     outStream.WriteLine("version: '3.5'");
                     outStream.Write(yaml);
                 }
 
                 //Run deployment
-                var startInfo = new ProcessStartInfo("docker", $"stack deploy -c docker-compose.yml {stack}")
+                var startInfo = new ProcessStartInfo("docker", $"stack deploy -c {composeFile} {stack}")
                 {
                     RedirectStandardError = true,
                     RedirectStandardOutput = true
@@ -161,7 +163,7 @@ namespace Deploy
             }
             finally
             {
-                foreach (var secretFile in secretFiles)
+                foreach (var secretFile in secretFiles.Concat(new String[] { composeFile }))
                 {
                     try
                     {
@@ -173,8 +175,6 @@ namespace Deploy
                     }
                 }
             }
-
-            Console.ReadKey();
         }
 
         private static void Process_OutputDataReceived(object sender, DataReceivedEventArgs e)
