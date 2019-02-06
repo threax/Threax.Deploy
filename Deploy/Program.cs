@@ -72,6 +72,7 @@ namespace Deploy
             //Go through images and figure out specifics
             foreach(var service in ((IDictionary<String, dynamic>)parsed.services))
             {
+                //Figure out os deployment
                 var image = service.Value.image;
 
                 var split = image.Split('-');
@@ -80,9 +81,17 @@ namespace Deploy
                     throw new InvalidOperationException("Incorrect image format. Image must be in the format registry/image-os-arch");
                 }
                 var os = split[split.Length - 2];
-                if (os != "windows" && os != "linux")
+                String pathRoot = null;
+                switch (os)
                 {
-                    throw new InvalidOperationException($"Invalid os '{os}', must be 'windows' or 'linux'");
+                    case "windows":
+                        pathRoot = "c:/";
+                        break;
+                    case "linux":
+                        pathRoot = "/";
+                        break;
+                    default:
+                        throw new InvalidOperationException($"Invalid os '{os}', must be 'windows' or 'linux'");
                 }
 
                 //Ensure node exists
@@ -91,6 +100,24 @@ namespace Deploy
                 ((ExpandoObject)service.Value.deploy.placement).TryAdd("constraints", new List<Object>());
 
                 service.Value.deploy.placement.constraints.Add($"node.platform.os == {os}");
+
+                //Transform secrets that are rooted with ~:/
+                foreach(var secret in service.Value.secrets)
+                {
+                    if (secret.target.StartsWith("~:/"))
+                    {
+                        secret.target = pathRoot + secret.target.Substring(3);
+                    }
+                }
+
+                //Transform volumes that are rooted with ~:/
+                foreach (var volume in service.Value.volumes)
+                {
+                    if (volume.target.StartsWith("~:/"))
+                    {
+                        volume.target = pathRoot + volume.target.Substring(3);
+                    }
+                }
             }
 
             var serializer = new YamlDotNet.Serialization.Serializer();

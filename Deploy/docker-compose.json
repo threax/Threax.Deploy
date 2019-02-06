@@ -20,7 +20,7 @@
   },
   "services": {
     "app": {
-      "image": "spcols.azure.whatever/image-windows-x64",
+      "image": "spcols.azure.whatever/image-linux-x64",
       "secrets": [
         {
           "source": "appsettings-secrets-json",
@@ -32,10 +32,12 @@
           "constraints": [ "otherconstraint == constraint" ]
         }
       },
-      "volumes": {
-        "source": "olsdocs-source",
-        "target": "~:/data/source"
-      },
+      "volumes": [
+        {
+          "source": "olsdocs-source",
+          "target": "~:/data/source"
+        }
+      ],
       "environment": [
         "ASPNETCORE_URLS=http://*:5000",
         "ASPNETCORE_ENVIRONMENT=${ENV}",
