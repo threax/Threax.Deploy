@@ -17,12 +17,12 @@ WORKDIR /app
 FROM threax/build AS build
 WORKDIR /src
 COPY . .
-WORKDIR /src/Deploy
-RUN dotnet restore Deploy.csproj
-RUN dotnet build Deploy.csproj -c Release -o /app
+WORKDIR /src/StackDeploy
+RUN dotnet restore StackDeploy.csproj
+RUN dotnet build StackDeploy.csproj -c Release -o /app
 
 FROM build AS publish
-RUN dotnet publish Deploy.csproj -c Release -o /app
+RUN dotnet publish StackDeploy.csproj -c Release -o /app
 
 FROM base AS final
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
