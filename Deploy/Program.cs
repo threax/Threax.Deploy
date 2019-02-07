@@ -15,16 +15,42 @@ namespace Deploy
     {
         static void Main(string[] args)
         {
+            if(args[0] == "--help")
+            {
+                Console.WriteLine("Threax.Deploy run with:");
+                Console.WriteLine("dotnet Deploy.dll compose_file options");
+                Console.WriteLine();
+                Console.WriteLine("options can be as follows:");
+                Console.WriteLine("-l change the working directory to the location of the compose_file.");
+            }
+
             var secretFiles = new List<string>();
             var composeFile = "docker-compose.yml";
             try
             {
-                var inputFile = args[0];
+                var inputFile = Path.GetFullPath(args[0]);
+                var useLocal = false;
+                for(var i = 1; i < args.Length; ++i)
+                {
+                    switch (args[i])
+                    {
+                        case "-l":
+                            useLocal = true;
+                            break;
+                    }
+                }
                 String json;
                 using (var stream = new StreamReader(File.Open(inputFile, FileMode.Open, FileAccess.Read, FileShare.Read)))
                 {
                     json = stream.ReadToEnd();
                 }
+
+                //Change working directory to where the input file is located if set
+                if (useLocal)
+                {
+                    Directory.SetCurrentDirectory(Path.GetDirectoryName(inputFile));
+                }
+
                 dynamic parsed = JsonConvert.DeserializeObject<ExpandoObject>(json);
 
                 //Get stack name
