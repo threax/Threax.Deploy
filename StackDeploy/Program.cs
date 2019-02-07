@@ -21,24 +21,52 @@ namespace Deploy
                 Console.WriteLine("dotnet Deploy.dll compose_file options");
                 Console.WriteLine();
                 Console.WriteLine("options can be as follows:");
-                Console.WriteLine("-l change the working directory to the location of the compose_file.");
+                Console.WriteLine("-l - Change the working directory to the location of the compose_file.");
+                Console.WriteLine("-reg - The name of a remote registry to log into.");
+                Console.WriteLine("-user - The username for the remote registry.");
+                Console.WriteLine("-pass - The password for the remote registry.");
+                return;
             }
 
             var secretFiles = new List<string>();
             var composeFile = "docker-compose.yml";
+            var useLocal = false;
+            String registry = null;
+            String registryUser = null;
+            String registryPass = null;
             try
             {
                 var inputFile = Path.GetFullPath(args[0]);
-                var useLocal = false;
-                for(var i = 1; i < args.Length; ++i)
+                for (var i = 1; i < args.Length; ++i)
                 {
                     switch (args[i])
                     {
                         case "-l":
                             useLocal = true;
                             break;
+                        case "-reg":
+                            registry = args[++i];
+                            break;
+                        case "-user":
+                            registryUser = args[++i];
+                            break;
+                        case "-pass":
+                            registryPass = args[++i];
+                            break;
                     }
                 }
+
+                //See if we need to login
+                if (registry != null)
+                {
+                    if (registryUser == null || registryPass == null)
+                    {
+                        Console.WriteLine("You must provide a -user and -pass when using a registry.");
+                        return;
+                    }
+                    RunProcessWithOutput(new ProcessStartInfo("docker", $"login -u {registryUser} -p {registryPass} {registry}"));
+                }
+
                 String json;
                 using (var stream = new StreamReader(File.Open(inputFile, FileMode.Open, FileAccess.Read, FileShare.Read)))
                 {
@@ -162,26 +190,7 @@ namespace Deploy
                 }
 
                 //Run deployment
-                var startInfo = new ProcessStartInfo("docker", $"stack deploy --prune --with-registry-auth -c {composeFile} {stack}")
-                {
-                    RedirectStandardError = true,
-                    RedirectStandardOutput = true
-                };
-                using (var deployCommand = Process.Start(startInfo))
-                {
-                    deployCommand.ErrorDataReceived += (s, e) =>
-                    {
-                        Console.Error.WriteLine(e.Data);
-                    };
-                    deployCommand.OutputDataReceived += (s, e) =>
-                    {
-                        Console.WriteLine(e.Data);
-                    };
-                    deployCommand.BeginErrorReadLine();
-                    deployCommand.BeginOutputReadLine();
-
-                    deployCommand.WaitForExit();
-                }
+                RunProcessWithOutput(new ProcessStartInfo("docker", $"stack deploy --prune --with-registry-auth -c {composeFile} {stack}"));
             }
             finally
             {
@@ -196,17 +205,33 @@ namespace Deploy
                         Console.WriteLine($"{ex.GetType().Name} when deleting {secretFile}. Will try to erase the rest of the files.");
                     }
                 }
+
+                if (registry != null)
+                {
+                    RunProcessWithOutput(new ProcessStartInfo("docker", $"logout {registry}"));
+                }
             }
         }
 
-        private static void Process_OutputDataReceived(object sender, DataReceivedEventArgs e)
+        private static void RunProcessWithOutput(ProcessStartInfo startInfo)
         {
-            throw new NotImplementedException();
-        }
+            startInfo.RedirectStandardError = true;
+            startInfo.RedirectStandardOutput = true;
+            using (var process = Process.Start(startInfo))
+            {
+                process.ErrorDataReceived += (s, e) =>
+                {
+                    Console.Error.WriteLine(e.Data);
+                };
+                process.OutputDataReceived += (s, e) =>
+                {
+                    Console.WriteLine(e.Data);
+                };
+                process.BeginErrorReadLine();
+                process.BeginOutputReadLine();
 
-        private static void Process_ErrorDataReceived(object sender, DataReceivedEventArgs e)
-        {
-            throw new NotImplementedException();
+                process.WaitForExit();
+            }
         }
     }
 }

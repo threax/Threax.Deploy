@@ -16,7 +16,9 @@ This will find a file in the current directory named docker-compose.json and dep
 You can use `${PWD}` instead of `$(pwd)` on Windows.
 
 If you want you can specify the following arguments:
-filname [-l]
-filenam - required - The name of the file to read.
+filname [-l] [-reg registry] [-user registry user] [-pass registry password]
+filename - required - The name of the file to read.
 -l - optional - Change the current directory to the directory the docker-compose.json file comes from.
-/data/docker-compose.json -l
+-reg - The name of a remote registry to log into.
+-user - The username for the remote registry.
+-pass - The password for the remote registry.
