@@ -150,10 +150,6 @@ namespace Deploy
                         {
                             volume.target = pathRoot + volume.target.Substring(3);
                         }
-                        if(!((IDictionary<String, dynamic>)volume).ContainsKey("type") || volume.type == null)
-                        {
-                            volume.type = "volume";
-                        }
                     }
                 }
 
