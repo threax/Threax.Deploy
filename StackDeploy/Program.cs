@@ -19,6 +19,7 @@ namespace Deploy
             String registry = null;
             String registryUser = null;
             String registryPass = null;
+            bool verbose = false;
             String inputFile = "docker-compose.json";
             try
             {
@@ -38,16 +39,23 @@ namespace Deploy
                         case "-pass":
                             registryPass = args[++i];
                             break;
+                        case "-v":
+                            verbose = true;
+                            break;
                         case "--help":
                             Console.WriteLine("Threax.Deploy run with:");
                             Console.WriteLine("dotnet Deploy.dll options");
                             Console.WriteLine();
                             Console.WriteLine("options can be as follows:");
                             Console.WriteLine("-c - The compose file to load. Defaults to docker-compose.json in the current directory.");
+                            Console.WriteLine("-v - Run in verbose mode, which will echo the final yml file.");
                             Console.WriteLine("-reg - The name of a remote registry to log into.");
                             Console.WriteLine("-user - The username for the remote registry.");
                             Console.WriteLine("-pass - The password for the remote registry.");
                             return; //End program
+                        default:
+                            Console.WriteLine($"Unknown argument {args[i]}");
+                            return;
                     }
                 }
 
@@ -176,6 +184,10 @@ namespace Deploy
                 filesToDelete.Add(composeFile);
                 var serializer = new YamlDotNet.Serialization.Serializer();
                 var yaml = serializer.Serialize(parsed);
+                if (verbose)
+                {
+                    Console.WriteLine(yaml);
+                }
                 using (var outStream = new StreamWriter(File.Open(composeFile, FileMode.Create, FileAccess.Write, FileShare.None)))
                 {
                     outStream.WriteLine("version: '3.5'");

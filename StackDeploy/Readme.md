@@ -20,6 +20,7 @@ If you want you can specify the following arguments:
 [-c filname] [-l] [-reg registry] [-user registry user] [-pass registry password]
 filename - required - The name of the file to read.
 -c - The docker-compose.json file to load.
+-v - Run in verbose mode and output the final yml file.
 -reg - The name of a remote registry to log into.
 -user - The username for the remote registry.
 -pass - The password for the remote registry.
