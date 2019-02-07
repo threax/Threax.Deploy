@@ -15,34 +15,19 @@ namespace Deploy
     {
         static void Main(string[] args)
         {
-            if(args[0] == "--help")
-            {
-                Console.WriteLine("Threax.Deploy run with:");
-                Console.WriteLine("dotnet Deploy.dll compose_file options");
-                Console.WriteLine();
-                Console.WriteLine("options can be as follows:");
-                Console.WriteLine("-l - Change the working directory to the location of the compose_file.");
-                Console.WriteLine("-reg - The name of a remote registry to log into.");
-                Console.WriteLine("-user - The username for the remote registry.");
-                Console.WriteLine("-pass - The password for the remote registry.");
-                return;
-            }
-
-            var secretFiles = new List<string>();
-            var composeFile = "docker-compose.yml";
-            var useLocal = false;
+            var filesToDelete = new List<string>();
             String registry = null;
             String registryUser = null;
             String registryPass = null;
+            String inputFile = "docker-compose.json";
             try
             {
-                var inputFile = Path.GetFullPath(args[0]);
-                for (var i = 1; i < args.Length; ++i)
+                for (var i = 0; i < args.Length; ++i)
                 {
                     switch (args[i])
                     {
-                        case "-l":
-                            useLocal = true;
+                        case "-c":
+                            inputFile = Path.GetFullPath(args[++i]);
                             break;
                         case "-reg":
                             registry = args[++i];
@@ -53,6 +38,16 @@ namespace Deploy
                         case "-pass":
                             registryPass = args[++i];
                             break;
+                        case "--help":
+                            Console.WriteLine("Threax.Deploy run with:");
+                            Console.WriteLine("dotnet Deploy.dll options");
+                            Console.WriteLine();
+                            Console.WriteLine("options can be as follows:");
+                            Console.WriteLine("-c - The compose file to load. Defaults to docker-compose.json in the current directory.");
+                            Console.WriteLine("-reg - The name of a remote registry to log into.");
+                            Console.WriteLine("-user - The username for the remote registry.");
+                            Console.WriteLine("-pass - The password for the remote registry.");
+                            return; //End program
                     }
                 }
 
@@ -73,11 +68,7 @@ namespace Deploy
                     json = stream.ReadToEnd();
                 }
 
-                //Change working directory to where the input file is located if set
-                if (useLocal)
-                {
-                    Directory.SetCurrentDirectory(Path.GetDirectoryName(inputFile));
-                }
+                var outBasePath = Path.GetDirectoryName(inputFile);
 
                 dynamic parsed = JsonConvert.DeserializeObject<ExpandoObject>(json);
 
@@ -113,12 +104,12 @@ namespace Deploy
                             }
                             var hashStr = sb.ToString();
 
-                            var file = secret.Key;
+                            var file = Path.Combine(outBasePath, secret.Key);
                             using (var secretStream = new StreamWriter(File.Open(file, FileMode.Create)))
                             {
                                 secretStream.Write(secretJson);
                             }
-                            secretFiles.Add(file);
+                            filesToDelete.Add(file);
 
                             newSecrets.TryAdd(secret.Key, new
                             {
@@ -181,6 +172,8 @@ namespace Deploy
                     }
                 }
 
+                var composeFile = Path.Combine(outBasePath, "docker-compose.yml");
+                filesToDelete.Add(composeFile);
                 var serializer = new YamlDotNet.Serialization.Serializer();
                 var yaml = serializer.Serialize(parsed);
                 using (var outStream = new StreamWriter(File.Open(composeFile, FileMode.Create, FileAccess.Write, FileShare.None)))
@@ -194,7 +187,7 @@ namespace Deploy
             }
             finally
             {
-                foreach (var secretFile in secretFiles.Concat(new String[] { composeFile }))
+                foreach (var secretFile in filesToDelete)
                 {
                     try
                     {

@@ -29,5 +29,5 @@ FROM base AS final
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
 WORKDIR /app
 COPY --from=publish /app .
+WORKDIR /data
 ENTRYPOINT ["dotnet", "/app/StackDeploy.dll"]
-CMD ["/data/docker-compose.json", "-l"]
