@@ -7,7 +7,7 @@ RUN apt-get update &&\
     wget -q https://download.docker.com/linux/static/stable/x86_64/docker-18.09.1.tgz &&\
     tar xzvf docker-18.09.1.tgz &&\
     mv docker/* /usr/bin/ &&\
-	rm docker-18.09.1.tgz &&\
+    rm docker-18.09.1.tgz &&\
     apt-get remove --auto-remove apt-transport-https -y &&\
     apt-get remove --auto-remove wget -y &&\
     apt-get autoremove &&\
