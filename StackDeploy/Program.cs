@@ -107,7 +107,7 @@ namespace Deploy
                     var stack = parsed["stack"];
                     parsed.Remove("stack");
 
-                    ExpandoObject newSecrets = new ExpandoObject(); //These are used below if ssl certs are added
+                    ExpandoObject newFileSecrets = new ExpandoObject(); //These are used below if ssl certs are added
 
                     //Go through images and figure out specifics
                     foreach (KeyValuePair<String, dynamic> service in parsed["services"])
@@ -149,7 +149,7 @@ namespace Deploy
                                 }
                                 context = Path.GetFullPath(Path.Combine(outBasePath, context));
 
-                                if (!buildInfoDict.TryGetValue("file", out dynamic file))
+                                if (!buildInfoDict.TryGetValue("dockerfile", out dynamic file))
                                 {
                                     file = "Dockerfile";
                                 }
@@ -203,7 +203,7 @@ namespace Deploy
                                         Console.WriteLine($"Found exising ssl secret for {stack}_{service.Key}. Using cert from existing service.");
 
                                         //If there is already a secret, use that
-                                        newSecrets.TryAdd($"{service.Key}-ssl", new
+                                        newFileSecrets.TryAdd($"{service.Key}-ssl", new
                                         {
                                             name = secretName,
                                             external = true
@@ -226,7 +226,7 @@ namespace Deploy
                                         cert = CreateCerts(certFile, secretName);
                                         filesToDelete.Add(certFile);
 
-                                        newSecrets.TryAdd($"{service.Key}-ssl", new
+                                        newFileSecrets.TryAdd($"{service.Key}-ssl", new
                                         {
                                             file = certFile,
                                             name = secretName
@@ -259,7 +259,7 @@ namespace Deploy
                             if (secret.Value as String == "external")
                             {
                                 //Setup default secret, which is external
-                                newSecrets.TryAdd(secret.Key, new
+                                newFileSecrets.TryAdd(secret.Key, new
                                 {
                                     external = true
                                 });
@@ -285,14 +285,14 @@ namespace Deploy
                                 }
                                 filesToDelete.Add(file);
 
-                                newSecrets.TryAdd(secret.Key, new
+                                newFileSecrets.TryAdd(secret.Key, new
                                 {
                                     file = file,
                                     name = $"{stack}_s_{hashStr}"
                                 });
                             }
                         }
-                        parsed["secrets"] = newSecrets;
+                        parsed["secrets"] = newFileSecrets;
                     }
 
                     var composeFile = Path.Combine(outBasePath, "docker-compose.yml");
