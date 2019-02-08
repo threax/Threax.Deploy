@@ -391,10 +391,7 @@ namespace Deploy
                 File.WriteAllBytes(privateKeyFile, certificate.Export(X509ContentType.Pfx));
 
                 // Create Base 64 encoded CER public key only
-                return
-                "-----BEGIN CERTIFICATE-----"
-                + Convert.ToBase64String(certificate.Export(X509ContentType.Cert), Base64FormattingOptions.None)
-                + "-----END CERTIFICATE-----";
+                return Convert.ToBase64String(certificate.Export(X509ContentType.Cert), Base64FormattingOptions.None);
             }
         }
     }
