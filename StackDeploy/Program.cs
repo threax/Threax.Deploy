@@ -197,7 +197,6 @@ namespace Deploy
                                     var key = labels[i].Split('=')[0];
 
                                     var swarmSecrets = await client.Secrets.ListAsync();
-                                    Console.Write(JsonConvert.SerializeObject(swarmSecrets, Formatting.Indented));
                                     var secretName = $"{stack}_{service.Key}_ssl";
                                     if (swarmSecrets.Any(s =>
                                     {
@@ -208,6 +207,8 @@ namespace Deploy
                                         return false;
                                     }))
                                     {
+                                        Console.WriteLine($"Found exising ssl secret for {stack}_{service.Key}. Using cert from existing service.");
+
                                         //If there is already a secret, use that
                                         newSecrets.TryAdd($"{service.Key}-ssl", new
                                         {
@@ -217,13 +218,16 @@ namespace Deploy
 
                                         //Find cert from existing service
                                         var swarmServices = await client.Swarm.ListServicesAsync();
-                                        Console.Write(JsonConvert.SerializeObject(swarmServices, Formatting.Indented));
 
                                         var currentService = swarmServices.First(s => s.Spec.Name == $"{stack}_{service.Key}");
                                         currentService.Spec.TaskTemplate.ContainerSpec.Labels.TryGetValue(key, out cert);
+
+                                        //Should maybe check for expiration, right now its set way ahead so it should be ok
                                     }
                                     else
                                     {
+                                        Console.WriteLine($"No exising ssl secret for {stack} {service.Key}. Creating a new one.");
+
                                         //Create a new secret
                                         var certFile = Path.Combine(outBasePath, service.Key + "Private.pfx");
                                         cert = CreateCerts(certFile);
@@ -332,7 +336,7 @@ namespace Deploy
                 request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(new OidCollection { new Oid("1.3.6.1.5.5.7.3.1") }, false));
 
                 //Create the cert
-                var certificate = request.CreateSelfSigned(new DateTimeOffset(DateTime.UtcNow.AddMinutes(-1)), new DateTimeOffset(DateTime.UtcNow.AddYears(5)));
+                var certificate = request.CreateSelfSigned(new DateTimeOffset(DateTime.UtcNow.AddMinutes(-1)), new DateTimeOffset(DateTime.UtcNow.AddYears(25)));
 
                 // Create pfx with private key
                 File.WriteAllBytes(privateKeyFile, certificate.Export(X509ContentType.Pfx));
