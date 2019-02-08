@@ -7,6 +7,7 @@ using System.Dynamic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
 namespace Deploy
@@ -85,9 +86,9 @@ namespace Deploy
                 ((IDictionary<String, dynamic>)parsed).Remove("stack");
 
                 //Remove secrets
+                ExpandoObject newSecrets = new ExpandoObject(); //These are used below if ssl certs are added
                 using (var md5 = MD5.Create())
                 {
-                    ExpandoObject newSecrets = new ExpandoObject();
                     foreach (var secret in ((IDictionary<String, dynamic>)parsed.secrets))
                     {
                         if (secret.Value as String == "external")
@@ -161,21 +162,51 @@ namespace Deploy
 
                     service.Value.deploy.placement.constraints.Add($"node.platform.os == {os}");
 
-                    //Transform secrets that are rooted with ~:/
-                    foreach (var secret in service.Value.secrets)
+                    //Transform volumes that are rooted with ~:/
+                    if (((IDictionary<String, dynamic>)service.Value).ContainsKey("volumes"))
                     {
-                        if (secret.target.StartsWith("~:/"))
+                        foreach (var volume in service.Value.volumes)
                         {
-                            secret.target = pathRoot + secret.target.Substring(3);
+                            if (volume.target.StartsWith("~:/"))
+                            {
+                                volume.target = pathRoot + volume.target.Substring(3);
+                            }
                         }
                     }
 
-                    //Transform volumes that are rooted with ~:/
-                    foreach (var volume in service.Value.volumes)
+                    //Generate certs for any labels requesting it
+                    if (((IDictionary<String, dynamic>)service.Value).ContainsKey("labels"))
                     {
-                        if (volume.target.StartsWith("~:/"))
+                        var labels = service.Value.labels;
+                        var count = ((IList<Object>)labels).Count;
+                        for (var i = 0; i < count; ++i)
                         {
-                            volume.target = pathRoot + volume.target.Substring(3);
+                            if (labels[i].Contains("{{Threax.StackDeploy.CreateCert()}}"))
+                            {
+                                var certFile = Path.Combine(outBasePath, service.Key + "Private.pfx");
+                                var cert = CreateCerts(certFile);
+                                filesToDelete.Add(certFile);
+
+                                newSecrets.TryAdd($"{service.Key}-ssl", new
+                                {
+                                    file = certFile,
+                                    name = $"{stack}_{service.Key}_ssl"
+                                });
+
+                                labels[i] = labels[i].Replace("{{Threax.StackDeploy.CreateCert()}}", cert);
+                            }
+                        }
+                    }
+
+                    //Transform secrets that are rooted with ~:/
+                    if (((IDictionary<String, dynamic>)service.Value).ContainsKey("secrets"))
+                    {
+                        foreach (var secret in service.Value.secrets)
+                        {
+                            if (secret.target.StartsWith("~:/"))
+                            {
+                                secret.target = pathRoot + secret.target.Substring(3);
+                            }
                         }
                     }
                 }
@@ -236,6 +267,37 @@ namespace Deploy
                 process.BeginOutputReadLine();
 
                 process.WaitForExit();
+            }
+        }
+
+        /// <summary>
+        /// Create certs. The public key is saved in pfx format to privateKeyFile and the public cert is returned
+        /// from this function CER encoded.
+        /// </summary>
+        /// <param name="privateKeyFile"></param>
+        /// <returns></returns>
+        private static String CreateCerts(String privateKeyFile)
+        {
+            using (var rsa = RSA.Create()) // generate asymmetric key pair
+            {
+                var request = new CertificateRequest($"cn=localhost", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+
+                //Thanks to Muscicapa Striata for these settings at
+                //https://stackoverflow.com/questions/42786986/how-to-create-a-valid-self-signed-x509certificate2-programmatically-not-loadin
+                request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DataEncipherment | X509KeyUsageFlags.KeyEncipherment | X509KeyUsageFlags.DigitalSignature, false));
+                request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(new OidCollection { new Oid("1.3.6.1.5.5.7.3.1") }, false));
+
+                //Create the cert
+                var certificate = request.CreateSelfSigned(new DateTimeOffset(DateTime.UtcNow.AddMinutes(-1)), new DateTimeOffset(DateTime.UtcNow.AddYears(5)));
+
+                // Create pfx with private key
+                File.WriteAllBytes(privateKeyFile, certificate.Export(X509ContentType.Pfx));
+
+                // Create Base 64 encoded CER public key only
+                return
+                "-----BEGIN CERTIFICATE-----"
+                + Convert.ToBase64String(certificate.Export(X509ContentType.Cert), Base64FormattingOptions.None)
+                + "-----END CERTIFICATE-----";
             }
         }
     }

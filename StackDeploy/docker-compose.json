@@ -25,6 +25,10 @@
         {
           "source": "appsettings-secrets-json",
           "target": "~:/app/appsettings.secrets.json"
+        },
+        {
+          "source": "app-ssl",
+          "target": "~:/app/ssl.pfx"
         }
       ],
       "deploy": {
@@ -47,7 +51,8 @@
       "labels": [
         "threax.nginx.host=${URL}",
         "threax.nginx.port=5000",
-        "threax.nginx.alias=${ALIAS}"
+        "threax.nginx.alias=${ALIAS}",
+        "threax.nginx.cert={{Threax.StackDeploy.CreateCert()}}"
       ]
     }
   }
