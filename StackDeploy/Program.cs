@@ -193,6 +193,9 @@ namespace Deploy
                             {
                                 if (labels[i].Contains("{{Threax.StackDeploy.CreateCert()}}"))
                                 {
+                                    String cert;
+                                    var key = labels[i].Split('=')[0];
+
                                     var swarmSecrets = await client.Secrets.ListAsync();
                                     Console.Write(JsonConvert.SerializeObject(swarmSecrets, Formatting.Indented));
                                     var secretName = $"{stack}_{service.Key}_ssl";
@@ -205,16 +208,25 @@ namespace Deploy
                                         return false;
                                     }))
                                     {
+                                        //If there is already a secret, use that
                                         newSecrets.TryAdd($"{service.Key}-ssl", new
                                         {
                                             name = secretName,
                                             external = true
                                         });
+
+                                        //Find cert from existing service
+                                        var swarmServices = await client.Swarm.ListServicesAsync();
+                                        Console.Write(JsonConvert.SerializeObject(swarmServices, Formatting.Indented));
+
+                                        var currentService = swarmServices.First(s => s.Spec.Name == $"{stack}_{service.Key}");
+                                        currentService.Spec.TaskTemplate.ContainerSpec.Labels.TryGetValue(key, out cert);
                                     }
                                     else
                                     {
+                                        //Create a new secret
                                         var certFile = Path.Combine(outBasePath, service.Key + "Private.pfx");
-                                        var cert = CreateCerts(certFile);
+                                        cert = CreateCerts(certFile);
                                         filesToDelete.Add(certFile);
 
                                         newSecrets.TryAdd($"{service.Key}-ssl", new
@@ -222,9 +234,9 @@ namespace Deploy
                                             file = certFile,
                                             name = secretName
                                         });
-
-                                        labels[i] = labels[i].Replace("{{Threax.StackDeploy.CreateCert()}}", cert);
                                     }
+
+                                    labels[i] = labels[i].Replace("{{Threax.StackDeploy.CreateCert()}}", cert);
                                 }
                             }
                         }
