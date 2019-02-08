@@ -107,7 +107,7 @@ namespace Deploy
                     var stack = parsed["stack"];
                     parsed.Remove("stack");
 
-                    ExpandoObject newFileSecrets = new ExpandoObject(); //These are used below if ssl certs are added
+                    IDictionary<String, dynamic> newFileSecrets = new ExpandoObject(); //These are used below if ssl certs are added
 
                     //Go through images and figure out specifics
                     foreach (KeyValuePair<String, dynamic> service in parsed["services"])
@@ -178,63 +178,64 @@ namespace Deploy
                             }
                         }
 
-                        //Generate certs for any labels requesting it, only done if deploy is true
-                        if (deploy && serviceValue.TryGetValue("labels", out var labels))
+                        //Handle extensions
+                        if (deploy && serviceValue.TryGetValue("ext", out var ext))
                         {
-                            var count = ((IList<Object>)labels).Count;
-                            for (var i = 0; i < count; ++i)
+                            serviceValue.Remove("ext");
+                            var extDic = (IDictionary<String, dynamic>)ext;
+                            if (extDic.TryGetValue("genssl", out dynamic genssl))
                             {
-                                if (labels[i].Contains("{{Threax.StackDeploy.CreateCert()}}"))
+                                var gensslDic = (IDictionary<String, dynamic>)genssl;
+                                if (!gensslDic.TryGetValue("target", out dynamic target))
                                 {
-                                    String cert;
-                                    var key = labels[i].Split('=')[0];
-
-                                    var swarmSecrets = await client.Secrets.ListAsync();
-                                    var secretName = $"{stack}_{service.Key}_ssl";
-                                    if (swarmSecrets.Any(s =>
-                                    {
-                                        if (s.Spec.Labels.TryGetValue("com.docker.stack.namespace", out var stackNamespace))
-                                        {
-                                            return stackNamespace == stack && s.Spec.Name == secretName;
-                                        }
-                                        return false;
-                                    }))
-                                    {
-                                        Console.WriteLine($"Found exising ssl secret for {stack}_{service.Key}. Using cert from existing service.");
-
-                                        //If there is already a secret, use that
-                                        newFileSecrets.TryAdd($"{service.Key}-ssl", new
-                                        {
-                                            name = secretName,
-                                            external = true
-                                        });
-
-                                        //Find cert from existing service
-                                        var swarmServices = await client.Swarm.ListServicesAsync();
-
-                                        var currentService = swarmServices.First(s => s.Spec.Name == $"{stack}_{service.Key}");
-                                        currentService.Spec.TaskTemplate.ContainerSpec.Labels.TryGetValue(key, out cert);
-
-                                        //Should maybe check for expiration, right now its set way ahead so it should be ok
-                                    }
-                                    else
-                                    {
-                                        Console.WriteLine($"No exising ssl secret for {stack} {service.Key}. Creating a new one.");
-
-                                        //Create a new secret
-                                        var certFile = Path.Combine(outBasePath, service.Key + "Private.pfx");
-                                        cert = CreateCerts(certFile, secretName);
-                                        filesToDelete.Add(certFile);
-
-                                        newFileSecrets.TryAdd($"{service.Key}-ssl", new
-                                        {
-                                            file = certFile,
-                                            name = secretName
-                                        });
-                                    }
-
-                                    labels[i] = labels[i].Replace("{{Threax.StackDeploy.CreateCert()}}", cert);
+                                    throw new InvalidOperationException("A genssl object must have a target entry.");
                                 }
+                                var sslSecretKey = $"auto_ssl_{stack}_{service.Key}";
+
+                                var swarmSecrets = await client.Secrets.ListAsync();
+                                var secretName = $"{stack}_{service.Key}_ssl";
+                                if (swarmSecrets.Any(s =>
+                                {
+                                    if (s.Spec.Labels.TryGetValue("com.docker.stack.namespace", out var stackNamespace))
+                                    {
+                                        return stackNamespace == stack && s.Spec.Name == secretName;
+                                    }
+                                    return false;
+                                }))
+                                {
+                                    //If there is already a secret, use that
+                                    Console.WriteLine($"Found exising ssl secret for {stack}_{service.Key}. Using cert from existing service.");
+
+                                    newFileSecrets[sslSecretKey] = new
+                                    {
+                                        name = secretName,
+                                        external = true
+                                    };
+                                }
+                                else
+                                {
+                                    //Create a new secret
+                                    Console.WriteLine($"No exising ssl secret for {stack} {service.Key}. Creating a new one.");
+
+                                    var certFile = Path.Combine(outBasePath, service.Key + "Private.pfx");
+                                    CreateCerts(certFile, secretName);
+                                    filesToDelete.Add(certFile);
+
+                                    newFileSecrets[sslSecretKey] = new
+                                    {
+                                        name = secretName,
+                                        file = certFile
+                                    };
+                                }
+
+                                //Add secret to service's secret section
+                                if (!serviceValue.TryGetValue("secrets", out var serviceSecrets))
+                                {
+                                    serviceSecrets = new List<dynamic>();
+                                    serviceValue.Add("secrets", serviceSecrets);
+                                }
+
+                                serviceSecrets.Add(new Dictionary<String, dynamic>() { { "source", sslSecretKey}, { "target", target } });
                             }
                         }
 
@@ -323,6 +324,10 @@ namespace Deploy
                         {
                             try
                             {
+                                if (verbose)
+                                {
+                                    Console.WriteLine($"Cleanup {secretFile}");
+                                }
                                 File.Delete(secretFile);
                             }
                             catch (Exception ex)
@@ -373,7 +378,7 @@ namespace Deploy
         /// </summary>
         /// <param name="privateKeyFile"></param>
         /// <returns></returns>
-        private static String CreateCerts(String privateKeyFile, String cn)
+        private static void CreateCerts(String privateKeyFile, String cn)
         {
             using (var rsa = RSA.Create()) // generate asymmetric key pair
             {
@@ -389,9 +394,6 @@ namespace Deploy
 
                 // Create pfx with private key
                 File.WriteAllBytes(privateKeyFile, certificate.Export(X509ContentType.Pfx));
-
-                // Create Base 64 encoded CER public key only
-                return Convert.ToBase64String(certificate.Export(X509ContentType.Cert), Base64FormattingOptions.None);
             }
         }
     }
