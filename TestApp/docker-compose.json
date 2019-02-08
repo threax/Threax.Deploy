@@ -22,7 +22,7 @@
     "app": {
       "image": "spcols.azure.whatever/image-linux-x64",
       "build": {
-        "context": "StackDeploy",
+        "context": ".",
         "dockerfile": "Dockerfile"
       },
       "secrets": [

@@ -28,6 +28,9 @@ namespace Deploy
                 String registryUser = null;
                 String registryPass = null;
                 bool verbose = false;
+                bool deleteFiles = true;
+                bool buildImages = false;
+                bool deploy = true;
                 String inputFile = "docker-compose.json";
                 try
                 {
@@ -50,6 +53,15 @@ namespace Deploy
                             case "-v":
                                 verbose = true;
                                 break;
+                            case "-keep":
+                                deleteFiles = false;
+                                break;
+                            case "-build":
+                                buildImages = true;
+                                break;
+                            case "-nodeploy":
+                                deploy = false;
+                                break;
                             case "--help":
                                 Console.WriteLine("Threax.Deploy run with:");
                                 Console.WriteLine("dotnet Deploy.dll options");
@@ -60,6 +72,9 @@ namespace Deploy
                                 Console.WriteLine("-reg - The name of a remote registry to log into.");
                                 Console.WriteLine("-user - The username for the remote registry.");
                                 Console.WriteLine("-pass - The password for the remote registry.");
+                                Console.WriteLine("-keep - Don't erase output files. Will keep secrets, use carefully.");
+                                Console.WriteLine("-build - Build images before deployment.");
+                                Console.WriteLine("-nodeploy - Don't deploy images. Can use -build -nodeploy to just build images.");
                                 return; //End program
                             default:
                                 Console.WriteLine($"Unknown argument {args[i]}");
@@ -92,8 +107,151 @@ namespace Deploy
                     var stack = parsed["stack"];
                     parsed.Remove("stack");
 
-                    //Remove secrets
                     ExpandoObject newSecrets = new ExpandoObject(); //These are used below if ssl certs are added
+
+                    //Go through images and figure out specifics
+                    foreach (KeyValuePair<String, dynamic> service in parsed["services"])
+                    {
+                        IDictionary<String, dynamic> serviceValue = service.Value;
+
+                        //Figure out os deployment
+                        var image = serviceValue["image"];
+
+                        var split = image.Split('-');
+                        if (split.Length != 3)
+                        {
+                            throw new InvalidOperationException("Incorrect image format. Image must be in the format registry/image-os-arch");
+                        }
+                        var os = split[split.Length - 2];
+                        String pathRoot = null;
+                        switch (os)
+                        {
+                            case "windows":
+                                pathRoot = "c:/";
+                                break;
+                            case "linux":
+                                pathRoot = "/";
+                                break;
+                            default:
+                                throw new InvalidOperationException($"Invalid os '{os}', must be 'windows' or 'linux'");
+                        }
+
+                        //If build is set, attempt to build the image
+                        if (serviceValue.TryGetValue("build", out dynamic buildInfo))
+                        {
+                            IDictionary<String, dynamic> buildInfoDict = buildInfo;
+                            serviceValue.Remove("build");
+                            if (buildImages)
+                            {
+                                if(!buildInfoDict.TryGetValue("context", out dynamic context))
+                                {
+                                    context = ".";
+                                }
+                                context = Path.GetFullPath(Path.Combine(outBasePath, context));
+
+                                if (!buildInfoDict.TryGetValue("file", out dynamic file))
+                                {
+                                    file = "Dockerfile";
+                                }
+                                Console.WriteLine($"Building image {image} from {context} with dockerfile {file}");
+                                RunProcessWithOutput(new ProcessStartInfo("docker", $"build -f {file} -t {image} {context}"));
+                            }
+                        }
+
+                        //Ensure node exists
+                        ((ExpandoObject)serviceValue).TryAdd("deploy", new ExpandoObject());
+                        ((ExpandoObject)serviceValue["deploy"]).TryAdd("placement", new ExpandoObject());
+                        ((ExpandoObject)((IDictionary<String, dynamic>)serviceValue["deploy"])["placement"]).TryAdd("constraints", new List<Object>());
+                        var constraints = ((IDictionary<String, dynamic>)((IDictionary<String, dynamic>)serviceValue["deploy"])["placement"])["constraints"];
+
+                        constraints.Add($"node.platform.os == {os}");
+
+                        //Transform volumes that are rooted with ~:/
+                        if (serviceValue.TryGetValue("volumes", out var volumes))
+                        {
+                            foreach (IDictionary<String, dynamic> volume in volumes)
+                            {
+                                if (volume["target"].StartsWith("~:/"))
+                                {
+                                    volume["target"] = pathRoot + volume["target"].Substring(3);
+                                }
+                            }
+                        }
+
+                        //Generate certs for any labels requesting it, only done if deploy is true
+                        if (deploy && serviceValue.TryGetValue("labels", out var labels))
+                        {
+                            var count = ((IList<Object>)labels).Count;
+                            for (var i = 0; i < count; ++i)
+                            {
+                                if (labels[i].Contains("{{Threax.StackDeploy.CreateCert()}}"))
+                                {
+                                    String cert;
+                                    var key = labels[i].Split('=')[0];
+
+                                    var swarmSecrets = await client.Secrets.ListAsync();
+                                    var secretName = $"{stack}_{service.Key}_ssl";
+                                    if (swarmSecrets.Any(s =>
+                                    {
+                                        if (s.Spec.Labels.TryGetValue("com.docker.stack.namespace", out var stackNamespace))
+                                        {
+                                            return stackNamespace == stack && s.Spec.Name == secretName;
+                                        }
+                                        return false;
+                                    }))
+                                    {
+                                        Console.WriteLine($"Found exising ssl secret for {stack}_{service.Key}. Using cert from existing service.");
+
+                                        //If there is already a secret, use that
+                                        newSecrets.TryAdd($"{service.Key}-ssl", new
+                                        {
+                                            name = secretName,
+                                            external = true
+                                        });
+
+                                        //Find cert from existing service
+                                        var swarmServices = await client.Swarm.ListServicesAsync();
+
+                                        var currentService = swarmServices.First(s => s.Spec.Name == $"{stack}_{service.Key}");
+                                        currentService.Spec.TaskTemplate.ContainerSpec.Labels.TryGetValue(key, out cert);
+
+                                        //Should maybe check for expiration, right now its set way ahead so it should be ok
+                                    }
+                                    else
+                                    {
+                                        Console.WriteLine($"No exising ssl secret for {stack} {service.Key}. Creating a new one.");
+
+                                        //Create a new secret
+                                        var certFile = Path.Combine(outBasePath, service.Key + "Private.pfx");
+                                        cert = CreateCerts(certFile, secretName);
+                                        filesToDelete.Add(certFile);
+
+                                        newSecrets.TryAdd($"{service.Key}-ssl", new
+                                        {
+                                            file = certFile,
+                                            name = secretName
+                                        });
+                                    }
+
+                                    labels[i] = labels[i].Replace("{{Threax.StackDeploy.CreateCert()}}", cert);
+                                }
+                            }
+                        }
+
+                        //Transform secrets that are rooted with ~:/
+                        if (serviceValue.TryGetValue("secrets", out var secrets))
+                        {
+                            foreach (IDictionary<String, dynamic> secret in secrets)
+                            {
+                                if (secret["target"].StartsWith("~:/"))
+                                {
+                                    secret["target"] = pathRoot + secret["target"].Substring(3);
+                                }
+                            }
+                        }
+                    }
+
+                    //Remove secrets
                     using (var md5 = MD5.Create())
                     {
                         foreach (KeyValuePair<String, dynamic> secret in parsed["secrets"])
@@ -137,127 +295,6 @@ namespace Deploy
                         parsed["secrets"] = newSecrets;
                     }
 
-                    //Go through images and figure out specifics
-                    foreach (KeyValuePair<String, dynamic> service in parsed["services"])
-                    {
-                        IDictionary<String, dynamic> serviceValue = service.Value;
-
-                        //Figure out os deployment
-                        var image = serviceValue["image"];
-
-                        var split = image.Split('-');
-                        if (split.Length != 3)
-                        {
-                            throw new InvalidOperationException("Incorrect image format. Image must be in the format registry/image-os-arch");
-                        }
-                        var os = split[split.Length - 2];
-                        String pathRoot = null;
-                        switch (os)
-                        {
-                            case "windows":
-                                pathRoot = "c:/";
-                                break;
-                            case "linux":
-                                pathRoot = "/";
-                                break;
-                            default:
-                                throw new InvalidOperationException($"Invalid os '{os}', must be 'windows' or 'linux'");
-                        }
-
-                        //Ensure node exists
-                        ((ExpandoObject)serviceValue).TryAdd("deploy", new ExpandoObject());
-                        ((ExpandoObject)serviceValue["deploy"]).TryAdd("placement", new ExpandoObject());
-                        ((ExpandoObject)((IDictionary<String, dynamic>)serviceValue["deploy"])["placement"]).TryAdd("constraints", new List<Object>());
-                        var constraints = ((IDictionary<String, dynamic>)((IDictionary<String, dynamic>)serviceValue["deploy"])["placement"])["constraints"];
-                        //((ExpandoObject)serviceValue["deploy"]["placement"]).TryAdd
-
-                        constraints.Add($"node.platform.os == {os}");
-
-                        //Transform volumes that are rooted with ~:/
-                        if (serviceValue.TryGetValue("volumes", out var volumes))
-                        {
-                            foreach (IDictionary<String, dynamic> volume in volumes)
-                            {
-                                if (volume["target"].StartsWith("~:/"))
-                                {
-                                    volume["target"] = pathRoot + volume["target"].Substring(3);
-                                }
-                            }
-                        }
-
-                        //Generate certs for any labels requesting it
-                        if (serviceValue.TryGetValue("labels", out var labels))
-                        {
-                            var count = ((IList<Object>)labels).Count;
-                            for (var i = 0; i < count; ++i)
-                            {
-                                if (labels[i].Contains("{{Threax.StackDeploy.CreateCert()}}"))
-                                {
-                                    String cert;
-                                    var key = labels[i].Split('=')[0];
-
-                                    var swarmSecrets = await client.Secrets.ListAsync();
-                                    var secretName = $"{stack}_{service.Key}_ssl";
-                                    if (swarmSecrets.Any(s =>
-                                    {
-                                        if(s.Spec.Labels.TryGetValue("com.docker.stack.namespace", out var stackNamespace))
-                                        {
-                                            return stackNamespace == stack && s.Spec.Name == secretName;
-                                        }
-                                        return false;
-                                    }))
-                                    {
-                                        Console.WriteLine($"Found exising ssl secret for {stack}_{service.Key}. Using cert from existing service.");
-
-                                        //If there is already a secret, use that
-                                        newSecrets.TryAdd($"{service.Key}-ssl", new
-                                        {
-                                            name = secretName,
-                                            external = true
-                                        });
-
-                                        //Find cert from existing service
-                                        var swarmServices = await client.Swarm.ListServicesAsync();
-
-                                        var currentService = swarmServices.First(s => s.Spec.Name == $"{stack}_{service.Key}");
-                                        currentService.Spec.TaskTemplate.ContainerSpec.Labels.TryGetValue(key, out cert);
-
-                                        //Should maybe check for expiration, right now its set way ahead so it should be ok
-                                    }
-                                    else
-                                    {
-                                        Console.WriteLine($"No exising ssl secret for {stack} {service.Key}. Creating a new one.");
-
-                                        //Create a new secret
-                                        var certFile = Path.Combine(outBasePath, service.Key + "Private.pfx");
-                                        cert = CreateCerts(certFile);
-                                        filesToDelete.Add(certFile);
-
-                                        newSecrets.TryAdd($"{service.Key}-ssl", new
-                                        {
-                                            file = certFile,
-                                            name = secretName
-                                        });
-                                    }
-
-                                    labels[i] = labels[i].Replace("{{Threax.StackDeploy.CreateCert()}}", cert);
-                                }
-                            }
-                        }
-
-                        //Transform secrets that are rooted with ~:/
-                        if (serviceValue.TryGetValue("secrets", out var secrets))
-                        {
-                            foreach (IDictionary<String, dynamic> secret in secrets)
-                            {
-                                if (secret["target"].StartsWith("~:/"))
-                                {
-                                    secret["target"] = pathRoot + secret["target"].Substring(3);
-                                }
-                            }
-                        }
-                    }
-
                     var composeFile = Path.Combine(outBasePath, "docker-compose.yml");
                     filesToDelete.Add(composeFile);
                     var serializer = new YamlDotNet.Serialization.Serializer();
@@ -273,19 +310,25 @@ namespace Deploy
                     }
 
                     //Run deployment
-                    RunProcessWithOutput(new ProcessStartInfo("docker", $"stack deploy --prune --with-registry-auth -c {composeFile} {stack}"));
+                    if (deploy)
+                    {
+                        RunProcessWithOutput(new ProcessStartInfo("docker", $"stack deploy --prune --with-registry-auth -c {composeFile} {stack}"));
+                    }
                 }
                 finally
                 {
-                    foreach (var secretFile in filesToDelete)
+                    if (deleteFiles)
                     {
-                        try
+                        foreach (var secretFile in filesToDelete)
                         {
-                            File.Delete(secretFile);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"{ex.GetType().Name} when deleting {secretFile}. Will try to erase the rest of the files.");
+                            try
+                            {
+                                File.Delete(secretFile);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"{ex.GetType().Name} when deleting {secretFile}. Will try to erase the rest of the files.");
+                            }
                         }
                     }
 
@@ -305,11 +348,17 @@ namespace Deploy
             {
                 process.ErrorDataReceived += (s, e) =>
                 {
-                    Console.Error.WriteLine(e.Data);
+                    if (!String.IsNullOrEmpty(e.Data))
+                    {
+                        Console.Error.WriteLine(e.Data);
+                    }
                 };
                 process.OutputDataReceived += (s, e) =>
                 {
-                    Console.WriteLine(e.Data);
+                    if (!String.IsNullOrEmpty(e.Data))
+                    {
+                        Console.WriteLine(e.Data);
+                    }
                 };
                 process.BeginErrorReadLine();
                 process.BeginOutputReadLine();
@@ -324,11 +373,11 @@ namespace Deploy
         /// </summary>
         /// <param name="privateKeyFile"></param>
         /// <returns></returns>
-        private static String CreateCerts(String privateKeyFile)
+        private static String CreateCerts(String privateKeyFile, String cn)
         {
             using (var rsa = RSA.Create()) // generate asymmetric key pair
             {
-                var request = new CertificateRequest($"cn=localhost", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                var request = new CertificateRequest($"cn={cn}", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
 
                 //Thanks to Muscicapa Striata for these settings at
                 //https://stackoverflow.com/questions/42786986/how-to-create-a-valid-self-signed-x509certificate2-programmatically-not-loadin
