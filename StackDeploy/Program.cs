@@ -30,6 +30,7 @@ namespace Deploy
                 bool verbose = false;
                 bool deleteFiles = true;
                 bool buildImages = false;
+                bool autoTag = true;
                 bool deploy = true;
                 String inputFile = "docker-compose.json";
                 try
@@ -58,6 +59,9 @@ namespace Deploy
                                 break;
                             case "-build":
                                 buildImages = true;
+                                break;
+                            case "-noAutoTag":
+                                autoTag = false;
                                 break;
                             case "-nodeploy":
                                 deploy = false;
@@ -143,6 +147,13 @@ namespace Deploy
                             serviceValue.Remove("build");
                             if (buildImages)
                             {
+                                var tag = image;
+                                if (autoTag)
+                                {
+                                    var now = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+                                    tag += ":" + now;
+                                }
+
                                 if(!buildInfoDict.TryGetValue("context", out dynamic context))
                                 {
                                     context = ".";
@@ -153,8 +164,11 @@ namespace Deploy
                                 {
                                     file = "Dockerfile";
                                 }
-                                Console.WriteLine($"Building image {image} from {context} with dockerfile {file}");
-                                RunProcessWithOutput(new ProcessStartInfo("docker", $"build -f {file} -t {image} {context}"));
+                                Console.WriteLine($"Building image {image} from {context} with dockerfile {file}. Taging with {tag} and {image}:latest");
+                                RunProcessWithOutput(new ProcessStartInfo("docker", $"build -f {file} -t {tag} -t {image}:latest {context}"));
+
+                                //Since we have a tag, update image in the yml
+                                serviceValue["image"] = tag;
                             }
                         }
 
