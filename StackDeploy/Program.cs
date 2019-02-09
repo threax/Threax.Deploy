@@ -118,7 +118,7 @@ namespace Deploy
                         var image = serviceValue["image"];
 
                         var split = image.Split('-');
-                        if (split.Length != 3)
+                        if (split.Length < 3)
                         {
                             throw new InvalidOperationException("Incorrect image format. Image must be in the format registry/image-os-arch");
                         }
