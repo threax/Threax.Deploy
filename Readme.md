@@ -9,6 +9,7 @@ This program wraps up docker stack deploy with a couple extra features:
 
 This smooths out some of the issues I had deploying to a mixed mode Docker Swarm.
 
+## Running Image
 You can run it like follows:
 ```
 docker run -it --rm -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/data threax/stack-deploy
@@ -30,3 +31,20 @@ If you want you can specify the following arguments:
 * -nodeploy - Don't deploy images. Can use -build -nodeploy to just build images.
 
 Put the arguments at the end of the command above.
+
+## Building Image
+To build the image go to the StackDeploy folder and then run:
+```
+docker build -t threax/stack-deploy:version .
+```
+
+Replace or remove version with the tagged version.
+
+## Testing Image
+The image can be tested with the TestApp folder. This will build a test deployment using the Threax.AspNetCore.Template project.
+
+Run the following command after building the image in the TestApp folder to test it.
+```
+docker run -it --rm -v /var/run/docker.sock:/var/run/docker.sock -v ${PWD}:/data threax/stack-deploy -v -build -nodeploy
+```
+This will run the stack deploy, which will clone the repo and build the image. The -nodeploy argument will prevent it from running.

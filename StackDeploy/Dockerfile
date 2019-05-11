@@ -18,7 +18,7 @@ WORKDIR /app
 FROM threax/build AS build
 WORKDIR /src
 COPY . .
-WORKDIR /src/StackDeploy
+WORKDIR /src
 RUN dotnet restore StackDeploy.csproj
 RUN dotnet build StackDeploy.csproj -c Release -o /app
 
