@@ -1,4 +1,5 @@
 ﻿using Docker.DotNet;
+using LibGit2Sharp;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
@@ -24,6 +25,8 @@ namespace Deploy
             using (var client = config.CreateClient())
             {
                 var filesToDelete = new List<string>();
+                String repoUser = null;
+                String repoPass = null;
                 String registry = null;
                 String registryUser = null;
                 String registryPass = null;
@@ -41,6 +44,12 @@ namespace Deploy
                         {
                             case "-c":
                                 inputFile = Path.GetFullPath(args[++i]);
+                                break;
+                            case "-repouser":
+                                repoUser = args[++i];
+                                break;
+                            case "-repopass":
+                                repoPass = args[++i];
                                 break;
                             case "-reg":
                                 registry = args[++i];
@@ -73,6 +82,8 @@ namespace Deploy
                                 Console.WriteLine("options can be as follows:");
                                 Console.WriteLine("-c - The compose file to load. Defaults to docker-compose.json in the current directory.");
                                 Console.WriteLine("-v - Run in verbose mode, which will echo the final yml file.");
+                                Console.WriteLine("-repouser - The username for the git repo.");
+                                Console.WriteLine("-repopass - The password for the git repo.");
                                 Console.WriteLine("-reg - The name of a remote registry to log into.");
                                 Console.WriteLine("-reguser - The username for the remote registry.");
                                 Console.WriteLine("-regpass - The password for the remote registry.");
@@ -160,12 +171,20 @@ namespace Deploy
                                 }
                                 context = Path.GetFullPath(Path.Combine(outBasePath, context));
 
-                                if (!buildInfoDict.TryGetValue("dockerfile", out dynamic file))
+                                //See if we should clone or pull a git repo
+                                if (buildInfoDict.TryGetValue("repo", out var repo))
                                 {
-                                    file = "Dockerfile";
+                                    CloneGitRepo(repo, repoUser, repoPass, context);
                                 }
-                                Console.WriteLine($"Building image {image} from {context} with dockerfile {file}. Taging with {tag} and {image}:latest");
-                                RunProcessWithOutput(new ProcessStartInfo("docker", $"build -f {file} -t {tag} -t {image}:latest {context}"));
+
+                                if (!buildInfoDict.TryGetValue("dockerfile", out dynamic dockerFile))
+                                {
+                                    dockerFile = "Dockerfile";
+                                }
+                                dockerFile = Path.Combine(context, dockerFile);
+
+                                Console.WriteLine($"Building image {image} from {context} with dockerfile {dockerFile}. Taging with {tag} and {image}:latest");
+                                RunProcessWithOutput(new ProcessStartInfo("docker", $"build -f {dockerFile} -t {tag} -t {image}:latest {context}"));
 
                                 //Since we have a tag, update image in the yml
                                 serviceValue["image"] = tag;
@@ -330,6 +349,10 @@ namespace Deploy
                         RunProcessWithOutput(new ProcessStartInfo("docker", $"stack deploy --prune --with-registry-auth -c {composeFile} {stack}"));
                     }
                 }
+                catch(Exception ex)
+                {
+                    Console.WriteLine($"{ex.GetType().Name} occured. Message: {ex.Message}");
+                }
                 finally
                 {
                     if (deleteFiles)
@@ -356,6 +379,42 @@ namespace Deploy
                         RunProcessWithOutput(new ProcessStartInfo("docker", $"logout {registry}"));
                     }
                 }
+            }
+        }
+
+        private static void CloneGitRepo(string repo, string repoUser, string repoPass, dynamic context)
+        {
+            if (Directory.Exists(context))
+            {
+                Console.WriteLine($"Pulling changes to {context}");
+                var path = Path.Combine(context, ".git");
+                using (var gitRepository = new LibGit2Sharp.Repository(path))
+                {
+                    var signature = new Signature("bot", "bot@bot", DateTime.Now);
+                    var result = Commands.Pull(gitRepository, signature, new PullOptions()
+                    {
+                        FetchOptions = new FetchOptions()
+                        {
+                            CredentialsProvider = (u, user, cred) => new UsernamePasswordCredentials()
+                            {
+                                Username = repoUser,
+                                Password = repoPass
+                            }
+                        }
+                    });
+                }
+            }
+            else
+            {
+                Console.WriteLine($"Cloning {repo} to {context}");
+                LibGit2Sharp.Repository.Clone(repo, context, new CloneOptions()
+                {
+                    CredentialsProvider = (u, user, cred) => new UsernamePasswordCredentials()
+                    {
+                        Username = repoUser,
+                        Password = repoPass
+                    }
+                });
             }
         }
 

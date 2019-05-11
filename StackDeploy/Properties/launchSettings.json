@@ -2,7 +2,7 @@
   "profiles": {
     "Deploy": {
       "commandName": "Project",
-      "commandLineArgs": "-c ../../../docker-compose.json -v"
+      "commandLineArgs": "-c ../../../../TestApp/docker-compose.json -v -build"
     }
   }
 }

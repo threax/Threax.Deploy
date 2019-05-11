@@ -2,61 +2,49 @@
   "stack": "test",
   "secrets": {
     "appsettings-secrets-json": {
-      "AppConfig": {
-        "ConnectionString": "$(AppConfig.ConnectionString)",
-        "StaticSitePath": "${INTERNAL_DATA_COMPILED}"
-      },
-      "JwtAuth": {
-        "ClientSecret": "$(JwtAuth.ClientSecret)"
-      },
-      "SharedClientCredentials": {
-        "ClientSecret": "$(SharedClientCredentials.ClientSecret)"
-      }
-    },
-    "other-file-secrets": "external"
+      "thing": "Value"
+    }
   },
   "volumes": {
-    "olsdocs-source": { "external": true }
+    "trustedroots": { "name": "shr-trustedroots" }
+  },
+  "networks": {
+    "appnet": { "external": true }
   },
   "services": {
     "app": {
-      "image": "spcols.azure.whatever/image-linux-x64",
+      "image": "test-linux-amd64",
+      "user": "20003:20003",
       "build": {
-        "context": ".",
-        "dockerfile": "Dockerfile"
+        "repo": "https://github.com/threax/Threax.AspNetCore.Template.git",
+        "context": "src",
+        "dockerfile": "AppTemplate/Dockerfile"
       },
       "secrets": [
         {
           "source": "appsettings-secrets-json",
           "target": "~:/app/appsettings.secrets.json"
-        },
-        {
-          "source": "app-ssl",
-          "target": "~:/app/AppCert.pfx"
         }
       ],
-      "deploy": {
-        "placement": {
-          "constraints": [ "otherconstraint == constraint" ]
-        }
-      },
       "volumes": [
         {
           "type": "volume",
-          "source": "olsdocs-source",
-          "target": "~:/data/source"
+          "source": "trustedroots",
+          "target": "~:/usr/local/share/ca-certificates"
+        },
+        {
+          "type": "bind",
+          "source": "/data/app/test",
+          "target": "~:/appdata"
         }
       ],
+      "networks": {
+        "appnet": {
+          "aliases": [ "test.appnet" ]
+        }
+      },
       "environment": [
-        "ASPNETCORE_URLS=http://*:5000",
-        "ASPNETCORE_ENVIRONMENT=${ENV}",
-        "SECURE_SITE_APPNAME=OlsDocs"
-      ],
-      "labels": [
-        "threax.nginx.host=${URL}",
-        "threax.nginx.port=5000",
-        "threax.nginx.alias=${ALIAS}",
-        "threax.nginx.cert={{Threax.StackDeploy.CreateCert()}}"
+        "ASPNETCORE_URLS=http://*:5000"
       ]
     }
   }
