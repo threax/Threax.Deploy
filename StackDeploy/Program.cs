@@ -45,10 +45,10 @@ namespace Deploy
                             case "-reg":
                                 registry = args[++i];
                                 break;
-                            case "-user":
+                            case "-reguser":
                                 registryUser = args[++i];
                                 break;
-                            case "-pass":
+                            case "-regpass":
                                 registryPass = args[++i];
                                 break;
                             case "-v":
@@ -74,8 +74,8 @@ namespace Deploy
                                 Console.WriteLine("-c - The compose file to load. Defaults to docker-compose.json in the current directory.");
                                 Console.WriteLine("-v - Run in verbose mode, which will echo the final yml file.");
                                 Console.WriteLine("-reg - The name of a remote registry to log into.");
-                                Console.WriteLine("-user - The username for the remote registry.");
-                                Console.WriteLine("-pass - The password for the remote registry.");
+                                Console.WriteLine("-reguser - The username for the remote registry.");
+                                Console.WriteLine("-regpass - The password for the remote registry.");
                                 Console.WriteLine("-keep - Don't erase output files. Will keep secrets, use carefully.");
                                 Console.WriteLine("-build - Build images before deployment.");
                                 Console.WriteLine("-nodeploy - Don't deploy images. Can use -build -nodeploy to just build images.");
@@ -91,7 +91,7 @@ namespace Deploy
                     {
                         if (registryUser == null || registryPass == null)
                         {
-                            Console.WriteLine("You must provide a -user and -pass when using a registry.");
+                            Console.WriteLine("You must provide a -reguser and -regpass when using a registry.");
                             return;
                         }
                         RunProcessWithOutput(new ProcessStartInfo("docker", $"login -u {registryUser} -p {registryPass} {registry}"));

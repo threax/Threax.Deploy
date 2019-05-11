@@ -20,8 +20,8 @@ If you want you can specify the following arguments:
 * -c - The compose file to load. Defaults to docker-compose.json in the current directory.
 * -v - Run in verbose mode, which will echo the final yml file.
 * -reg - The name of a remote registry to log into.
-* -user - The username for the remote registry.
-* -pass - The password for the remote registry.
+* -reguser - The username for the remote registry.
+* -regpass - The password for the remote registry.
 * -keep - Don't erase output files. Will keep secrets, use carefully.
 * -build - Build images before deployment.
 * -nodeploy - Don't deploy images. Can use -build -nodeploy to just build images.
