@@ -275,11 +275,15 @@ namespace Deploy
                         //Transform secrets that are rooted with ~:/
                         if (serviceValue.TryGetValue("secrets", out var secrets))
                         {
-                            foreach (IDictionary<String, dynamic> secret in secrets)
+                            foreach (dynamic dySec in secrets)
                             {
-                                if (secret["target"].StartsWith("~:/"))
+                                var secret = dySec as IDictionary<String, dynamic>;
+                                if (secret != null)
                                 {
-                                    secret["target"] = pathRoot + secret["target"].Substring(3);
+                                    if (secret["target"].StartsWith("~:/"))
+                                    {
+                                        secret["target"] = pathRoot + secret["target"].Substring(3);
+                                    }
                                 }
                             }
                         }

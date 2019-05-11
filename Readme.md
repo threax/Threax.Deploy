@@ -35,7 +35,7 @@ Put the arguments at the end of the command above.
 ## Building Image
 To build the image go to the StackDeploy folder and then run:
 ```
-docker build -t threax/stack-deploy:version .
+docker build -t threax/stack-deploy .
 ```
 
 Replace or remove version with the tagged version.

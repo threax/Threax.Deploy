@@ -3,7 +3,8 @@
   "secrets": {
     "appsettings-secrets-json": {
       "thing": "Value"
-    }
+    },
+    "signingCert": "external"
   },
   "volumes": {
     "trustedroots": { "name": "shr-trustedroots" }
@@ -24,7 +25,8 @@
         {
           "source": "appsettings-secrets-json",
           "target": "~:/app/appsettings.secrets.json"
-        }
+        },
+        "signingCert"
       ],
       "volumes": [
         {
