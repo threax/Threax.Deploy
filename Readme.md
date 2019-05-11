@@ -6,7 +6,7 @@ This program wraps up docker stack deploy with a couple extra features:
 * Allow the use of json to describe the docker deployment, converted to yaml when the command runs.
 * Log in and out of a remote registry during deployment.
 
-This smooths out some of the issues we had deploying to a mixed mode Docker Swarm.
+This smooths out some of the issues I had deploying to a mixed mode Docker Swarm.
 
 You can run it like follows:
 ```
