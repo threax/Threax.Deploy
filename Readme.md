@@ -17,10 +17,13 @@ This will find a file in the current directory named docker-compose.json and dep
 You can use `${PWD}` instead of `$(pwd)` on Windows.
 
 If you want you can specify the following arguments:
-[-c filname] [-l] [-reg registry] [-user registry user] [-pass registry password]
-filename - required - The name of the file to read.
--c - The docker-compose.json file to load.
--v - Run in verbose mode and output the final yml file.
--reg - The name of a remote registry to log into.
--user - The username for the remote registry.
--pass - The password for the remote registry.
+* -c - The compose file to load. Defaults to docker-compose.json in the current directory.
+* -v - Run in verbose mode, which will echo the final yml file.
+* -reg - The name of a remote registry to log into.
+* -user - The username for the remote registry.
+* -pass - The password for the remote registry.
+* -keep - Don't erase output files. Will keep secrets, use carefully.
+* -build - Build images before deployment.
+* -nodeploy - Don't deploy images. Can use -build -nodeploy to just build images.
+
+Put the arguments at the end of the command above.
