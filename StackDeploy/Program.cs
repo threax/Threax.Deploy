@@ -108,6 +108,7 @@ namespace Deploy
                         RunProcessWithOutput(new ProcessStartInfo("docker", $"login -u {registryUser} -p {registryPass} {registry}"));
                     }
 
+                    var inputFilePath = Path.GetDirectoryName(inputFile);
                     String json;
                     using (var stream = new StreamReader(File.Open(inputFile, FileMode.Open, FileAccess.Read, FileShare.Read)))
                     {
@@ -294,7 +295,8 @@ namespace Deploy
                     {
                         foreach (KeyValuePair<String, dynamic> secret in parsed["secrets"])
                         {
-                            if (secret.Value as String == "external")
+                            var secretString = secret.Value as String;
+                            if (secretString == "external")
                             {
                                 //Setup default secret, which is external
                                 newFileSecrets.TryAdd(secret.Key, new
@@ -302,19 +304,36 @@ namespace Deploy
                                     external = true
                                 });
                             }
+                            else if(secretString != null)
+                            {
+                                var secretFilePath = Path.Combine(inputFilePath, secretString);
+                                //This is probably a file
+                                if (File.Exists(secretFilePath))
+                                {
+                                    byte[] hash;
+                                    using(var stream = File.Open(secretFilePath, FileMode.Open, FileAccess.Read, FileShare.None))
+                                    {
+                                        hash = md5.ComputeHash(stream);
+                                    }
+                                    var hashStr = HashToHex(hash);
+
+                                    newFileSecrets.TryAdd(secret.Key, new
+                                    {
+                                        file = secretFilePath,
+                                        name = $"{stack}_s_{hashStr}"
+                                    });
+                                }
+                                else
+                                {
+                                    Console.WriteLine($"Cannot find file {secretFilePath}");
+                                }
+                            }
                             else
                             {
                                 //pull out secrets, put in file and then update secret entry
                                 String secretJson = JsonConvert.SerializeObject(secret.Value);
                                 var hash = md5.ComputeHash(Encoding.UTF8.GetBytes(secretJson));
-
-                                // Convert to hex string
-                                StringBuilder sb = new StringBuilder();
-                                for (int i = 0; i < hash.Length; i++)
-                                {
-                                    sb.Append(hash[i].ToString("X2"));
-                                }
-                                var hashStr = sb.ToString();
+                                string hashStr = HashToHex(hash);
 
                                 var file = Path.Combine(outBasePath, secret.Key);
                                 using (var secretStream = new StreamWriter(File.Open(file, FileMode.Create)))
@@ -384,6 +403,18 @@ namespace Deploy
                     }
                 }
             }
+        }
+
+        private static string HashToHex(byte[] hash)
+        {
+            // Convert to hex string
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < hash.Length; i++)
+            {
+                sb.Append(hash[i].ToString("X2"));
+            }
+            var hashStr = sb.ToString();
+            return hashStr;
         }
 
         private static void CloneGitRepo(string repo, string repoUser, string repoPass, dynamic context)
