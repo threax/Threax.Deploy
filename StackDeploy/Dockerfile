@@ -1,4 +1,4 @@
-﻿FROM microsoft/dotnet:2.2-runtime AS base
+﻿FROM mcr.microsoft.com/dotnet/core/runtime:2.2 AS base
 # Install docker
 WORKDIR /docker
 RUN apt-get update &&\
