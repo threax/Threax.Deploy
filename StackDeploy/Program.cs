@@ -185,7 +185,7 @@ namespace Deploy
                                 dockerFile = Path.Combine(context, dockerFile);
 
                                 Console.WriteLine($"Building image {image} from {context} with dockerfile {dockerFile}. Taging with {tag} and {image}:latest");
-                                RunProcessWithOutput(new ProcessStartInfo("docker", $"build -f {dockerFile} -t {tag} -t {image}:latest {context}"));
+                                RunProcessWithOutput(new ProcessStartInfo("docker", $"build --pull -f {dockerFile} -t {tag} -t {image}:latest {context}"));
 
                                 //Since we have a tag, update image in the yml
                                 serviceValue["image"] = tag;
